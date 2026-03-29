@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sakura Birthday</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+
+        #gameCanvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .main-text {
+            position: absolute;
+            top: 18%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: clamp(14px, 3vw, 22px);
+            text-align: center;
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000;
+            opacity: 0;
+            transition: opacity 1.2s ease-in-out;
+            white-space: pre-line;
+            max-width: 85%;
+            font-weight: bold;
+            letter-spacing: 0.05em;
+            line-height: 1.6;
+        }
+
+        .main-text.visible { opacity: 1; }
+
+        .start-button {
+            position: absolute;
+            top: 58%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 14px 32px;
+            background: #FF82AB;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: clamp(14px, 2.5vw, 18px);
+            font-weight: bold;
+            cursor: pointer;
+            pointer-events: all;
+            box-shadow: 0 4px 0 #8B2252, 0 0 20px rgba(255,130,171,0.4);
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.1em;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .start-button:hover {
+            transform: translate(-50%, -50%) translateY(2px);
+            box-shadow: 0 2px 0 #8B2252, 0 0 20px rgba(255,130,171,0.4);
+        }
+
+        .start-button:active {
+            transform: translate(-50%, -50%) translateY(4px);
+            box-shadow: none;
+        }
+
+        .start-button.hidden { display: none; }
+
+        .signature {
+            position: absolute;
+            bottom: 24px;
+            right: 24px;
+            color: #FF82AB;
+            font-size: clamp(12px, 2vw, 16px);
+            opacity: 0;
+            transition: opacity 2.5s ease-in-out;
+            text-shadow: 1px 1px 0 #000;
+            letter-spacing: 0.05em;
+        }
+
+        .signature.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="ui-overlay">
+        <div id="mainText" class="main-text">Hola Janny ✿</div>
+        <button id="startButton" class="start-button">✿ Toca aquí ✿</button>
+        <div id="signature" class="signature">— Deivid</div>
+    </div>
+
+<script>
+// ============================================================
+// CANVAS SETUP
+// ============================================================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const mainText = document.getElementById('mainText');
+const startButton = document.getElementById('startButton');
+const signature = document.getElementById('signature');
+
+const PIXEL = 4; // pixel art scale
+let GW, GH; // grid width/height (canvas logical pixels)
+
+function setupCanvas() {
+    GW = Math.floor(window.innerWidth / PIXEL);
+    GH = Math.floor(window.innerHeight / PIXEL);
+    canvas.width = GW;
+    canvas.height = GH;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    ctx.imageSmoothingEnabled = false;
+}
+
+window.addEventListener('resize', () => { setupCanvas(); createStars(); });
+
+// ============================================================
+// PALETTE
+// ============================================================
+const PAL = {
+    // Sky
+    sky0: '#0a0a1a',
+    sky1: '#12122e',
+    sky2: '#1a0a2e',
+
+    // Ground
+    gndDark: '#1a0f05',
+    gndBase: '#2B1A08',
+    gndLight: '#3d2410',
+    gndGrass: '#1a2f0a',
+    gndGrass2: '#243d0e',
+    gndGrass3: '#8B4513',
+
+    // Trunk
+    trkShadow: '#2B1B0D',
+    trkBase:   '#5D3A1A',
+    trkLight:  '#A0522D',
+    trkHighlight: '#C8773E',
+    trkMoss:   '#4A5D23',
+
+    // Canopy
+    cDeep:  '#6B1842',   // deep interior shadow
+    cShadow:'#8B2252',   // shadow
+    cMid:   '#C1547A',   // mid
+    cBase:  '#FF82AB',   // base pink
+    cLight: '#FFC0CB',   // light
+    cLighter:'#FFDDE6',  // lighter
+    cHighlight:'#FFF0F5',// highlight
+
+    // Petals
+    petal1: '#FFC0CB',
+    petal2: '#FFDDE6',
+    petal3: '#FF82AB',
+    petal4: '#FFF0F5',
+
+    // Stars
+    star:   '#FFFFFF',
+
+    transparent: null
+};
+
+// ============================================================
+// TREE SPRITE — 80x100 grid units
+// Each row is a string. Characters map to PAL entries.
+// Sprite is drawn with top-left at (treeX - 40, groundY - 95)
+// ============================================================
+
+// Character key:
+// ' ' = transparent
+// '0' = cDeep  (deepest shadow in canopy interior)
+// '1' = cShadow
+// '2' = cMid
+// '3' = cBase
+// '4' = cLight
+// '5' = cLighter
+// '6' = cHighlight
+// 'T' = trkShadow
+// 't' = trkBase
+// 'l' = trkLight
+// 'h' = trkHighlight
+// 'm' = trkMoss
+
+// 80 wide, 100 tall
+const SPRITE_W = 80;
+const SPRITE_H = 100;
+
+// We build the sprite as rows. Each row must be exactly SPRITE_W chars.
+// The canopy occupies rows 0-72, trunk rows 68-99.
+
+function buildSpriteRows() {
+    // Helper: repeat char
+    const r = (ch, n) => ch.repeat(n);
+    const _ = ' ';
+
+    const rows = [];
+
+    // ── ROW 0-1 : espacio vacío superior ──
+    rows.push(r(_,40));
+    rows.push(r(_,40));
+
+    // ── ROW 2-3 : inicio de la copa superior ──
+    rows.push(r(_,27) + r('c',3) + r(_,10));
+    rows.push(r(_,24) + r('c',3) + r('r',3) + r('c',1) + r(_,9));
+
+    // ── ROW 4-5 : expansión de la copa superior ──
+    rows.push(r(_,21) + r('c',3) + r('r',7) + r('c',3) + r(_,6));
+    rows.push(r(_,20) + r('c',1) + r('r',7) + r('r',1) + r('z',1) + r('r',1) + r('o',3) + r(_,7));
+
+    // ── ROW 6-8 : parte media superior ──
+    rows.push(r(_,20) + r('o',1) + r('r',6) + r('r',1) + r('z',1) + r('r',1) + r('r',1) + r('o',3) + r(_,6));
+    rows.push(r(_,18) + r('o',2) + r('r',6) + r('r',1) + r('z',1) + r('r',1) + r('r',1) + r('r',1) + r('r',1) + r('r',1) + r('c',3) + r(_,2));
+    rows.push(r(_,22) + r('o',4) + r('z',1) + r('o',4) + r('o',1) + r('r',6) + r('c',1) + r(_,1));
+
+    // ── ROW 9-11 : transición con tronco ──
+    rows.push(r(_,16) + r('c',3) + r(' ',1) + r('o',3) + r('z',1) + r('o',4) + r('o',1) + r('o',1) + r('r',2) + r('o',3) + r(_,8));
+    rows.push(r(_,15) + r('c',4) + r('r',3) + r(' ',1) + r(' ',1) + r('f',1) + r(' ',1) + r(' ',1) + r('o',5) + r(_,11));
+    rows.push(r(_,14) + r('c',7) + r(' ',1) + r('z',1) + r('f',1) + r(_,21));
+
+    // ── ROW 12-14 : expansión lateral ──
+    rows.push(r(_,14) + r('o',2) + r('r',7) + r('r',1) + r('z',1) + r('f',1) + r('z',1) + r(' ',1) + r(' ',1) + r(' ',1) + r('c',2) + r(_,16));
+    rows.push(r(_,16) + r('o',1) + r('r',4) + r('o',3) + r('z',1) + r('z',1) + r('z',1) + r('z',1) + r(' ',1) + r('r',2) + r(' ',1) + r('c',1) + r(' ',1) + r('c',2) + r(_,8));
+    rows.push(r(_,16) + r('o',6) + r('o',1) + r('f',1) + r('z',1) + r('o',1) + r('z',1) + r('z',1) + r('z',1) + r('r',4) + r('c',2) + r('r',3) + r(_,2));
+
+    // ── ROW 15-17 : parte central densa ──
+    rows.push(r(_,16) + r('o',6) + r('o',1) + r('f',1) + r('z',1) + r(' ',1) + r('o',4) + r('z',1) + r('z',1) + r('z',1) + r('r',4) + r('r',3) + r('o',1) + r(_,1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r('z',1) + r('z',1) + r(' ',1) + r(' ',1) + r('o',1) + r('o',1) + r('o',1) + r('o',1) + r(' ',1) + r('o',1) + r('z',1) + r('c',3) + r('o',3) + r(_,9));
+    rows.push(r('c',3) + r('c',1) + r('r',3) + r('r',6) + r('r',1) + r('c',1) + r('r',9) + r('r',1) + r('c',1) + r('r',2) + r('r',9) + r('o',1));
+
+    // ── ROW 18-20 : parte inferior central ──
+    rows.push(r('c',3) + r('r',3) + r('o',3) + r('r',4) + r('z',1) + r('z',1) + r('z',1) + r('z',1) + r('z',1) + r('f',1) + r('z',1) + r('f',1) + r('o',1) + r('o',1) + r('r',3) + r('o',3) + r('r',1));
+    rows.push(r('o',3) + r('r',4) + r('z',3) + r('o',3) + r('o',1) + r('o',1) + r(' ',1) + r('z',1) + r('z',1) + r('f',1) + r('z',1) + r('o',1) + r('o',1) + r('o',1) + r('o',1) + r('o',1) + r('r',2) + r('o',3) + r('o',1));
+    rows.push(r(' ',1) + r('o',8) + r('o',1) + r('o',1) + r('o',1) + r(' ',1) + r('z',1) + r('f',1) + r('z',1) + r('z',1) + r(' ',1) + r('o',4) + r(' ',1) + r(' ',1) + r('o',4));
+
+    // ── ROW 21-23 : base de la copa ──
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r('o',6) + r('o',1) + r('o',6) + r(' ',1) + r('o',1) + r('o',1) + r('o',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r('z',1) + r('o',1) + r('o',1) + r('z',1) + r('f',1) + r('f',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r('r',1) + r('z',1) + r('r',1) + r('z',1) + r('z',1) + r('z',1) + r('z',1) + r('f',1) + r('z',1) + r('f',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // ── ROW 24-26 : inicio del tronco con ramas ──
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r('c',2) + r('r',2) + r('o',1) + r('o',1) + r(' ',1) + r('z',1) + r('r',2) + r('r',1) + r('c',3) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r('c',3) + r('r',3) + r('r',1) + r('o',1) + r(' ',1) + r('z',1) + r('z',1) + r('r',4) + r('r',1) + r('c',1) + r(' ',1) + r('c',2) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r('c',3) + r('r',1) + r('c',1) + r('r',6) + r('r',1) + r('c',1) + r(' ',1) + r('f',1) + r('z',1) + r('z',1) + r('o',1) + r('r',4) + r('r',1) + r('r',2) + r('c',2) + r('r',2) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // ── ROW 27-29 : tronco central ──
+    rows.push(r('c',3) + r('r',3) + r('o',4) + r('r',4) + r('z',1) + r('o',1) + r('r',4) + r('o',3) + r('r',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r('r',7) + r('z',1) + r('o',3) + r(' ',1) + r('z',1) + r('z',1) + r('f',1) + r('z',1) + r('o',1) + r('o',1) + r('o',1) + r('o',1) + r('o',1) + r('o',1) + r('r',2) + r('o',3) + r('o',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r('o',8) + r('o',1) + r('o',1) + r('o',1) + r(' ',1) + r('z',1) + r('f',1) + r('z',1) + r('z',1) + r(' ',1) + r('o',4) + r(' ',1) + r(' ',1) + r('o',4) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // ── ROW 30-32 : base del tronco ──
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // ── ROW 33-35 : continuación del tronco ──
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // ── ROW 36-38 : base final del tronco ──
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // ── ROW 39 : línea final ──
+    rows.push(r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1) + r(' ',1));
+
+    // Ensure all rows are exactly SPRITE_W wide
+    const padded = rows.map((row, i) => {
+        if (row.length < SPRITE_W) return row + r(_,SPRITE_W - row.length);
+        if (row.length > SPRITE_W) return row.slice(0, SPRITE_W);
+        return row;
+    });
+
+    return padded;
+}
+
+const SPRITE_ROWS = buildSpriteRows();
+
+// Validate lengths (debug only)
+// SPRITE_ROWS.forEach((r,i) => { if(r.length!==SPRITE_W) console.warn(`Row ${i}: length=${r.length}`); });
+
+// Color lookup
+const CHAR_TO_COLOR = {
+    'r': '#F9CAD0',    // rosa
+    'c': '#FDCCD2',    // rosa claro
+    'o': '#ED7485',    // rosa oscuro
+    'f': '#55342D',    // cafe
+    'x': '#694539',    // cafe claro
+    'z': '#3A231D',    // cafe oscuro
+    ' ': null
+};
+
+// Layer thresholds: each row belongs to a layer 0-8
+// Layer controls visibility during the animated reveal
+function getRowLayer(rowIndex) {
+    if (rowIndex >= 73) return 0; // trunk = layer 0
+    if (rowIndex >= 65) return 1; // canopy bottom
+    if (rowIndex >= 50) return 2;
+    if (rowIndex >= 35) return 3;
+    if (rowIndex >= 20) return 4;
+    if (rowIndex >= 10) return 5;
+    return 6; // top highlights
+}
+
+// Char's "color layer" for the color reveal pass
+function getCharLayer(ch) {
+    // Trunk and branches always visible
+    if ('fxyz'.includes(ch)) return 0;
+    // Blossom colors: light→medium→dark
+    if (ch === 'c') return 4; // rosa claro
+    if (ch === 'r') return 2; // rosa
+    if (ch === 'o') return 0; // rosa oscuro
+    return 0;
+}
+
+// ============================================================
+// TREE DRAWING WITH LAYERED REVEAL
+// ============================================================
+// treeReveal: 0→1 controls full reveal (structure)
+// colorReveal: 0→1 controls color ramp application
+// sproutReveal: 0→1 controls sprout size
+
+let treeReveal = 0;      // 0=not started, 1=full structure visible
+let colorReveal = 0;     // 0=only deep/shadow, 1=full color
+let treeVisible = false;
+
+function getSpriteOrigin() {
+    const cx = Math.floor(GW / 2);
+    const groundY = Math.floor(GH * 0.88);
+    const targetH = Math.floor(GH * 0.72); // 72% of screen height
+    const scale = targetH / SPRITE_H;
+    // We won't scale the sprite — instead pick PIXEL multiplier
+    // Actually draw it 1:1 in grid coords
+    const ox = cx - Math.floor(SPRITE_W / 2);
+    const oy = groundY - SPRITE_H;
+    return { ox, oy };
+}
+
+function drawTree() {
+    if (!treeVisible) return;
+    const { ox, oy } = getSpriteOrigin();
+
+    // Determine visible structure rows (based on treeReveal)
+    // Reveal goes bottom-up (trunk first, then blossom clusters)
+    // treeReveal 0→1: rows visible based on layer
+    // Layer order to reveal: 0 (trunk) → 1 → 2 → 3 → 4 → 5 → 6
+    const maxLayerVisible = treeReveal * 6;
+
+    // Color reveal: colorReveal 0→1 reveals char layers 0→4
+    const maxColorVisible = colorReveal * 4;
+
+    for (let row = 0; row < SPRITE_ROWS.length; row++) {
+        const rowLayer = getRowLayer(row);
+        if (rowLayer > maxLayerVisible) continue;
+
+        const str = SPRITE_ROWS[row];
+        for (let col = 0; col < str.length; col++) {
+            const ch = str[col];
+            if (ch === ' ') continue;
+
+            const charLayer = getCharLayer(ch);
+
+            // For structure reveal: trunk/branches always show if rowLayer visible
+            // For blossoms: only show chars up to maxColorVisible
+            let color;
+            if ('TB'.includes(ch)) {
+                color = CHAR_TO_COLOR[ch];
+            } else {
+                if (charLayer > maxColorVisible) {
+                    // Replace with dark pink during early reveal
+                    color = CHAR_TO_COLOR['d'];
+                } else {
+                    color = CHAR_TO_COLOR[ch];
+                }
+            }
+
+            if (!color) continue;
+            ctx.fillStyle = color;
+            ctx.fillRect(ox + col, oy + row, 1, 1);
+        }
+    }
+}
+
+// ============================================================
+// STARS
+// ============================================================
+let stars = [];
+
+function createStars() {
+    stars = [];
+    const count = Math.floor(GW * GH * 0.002);
+    for (let i = 0; i < count; i++) {
+        stars.push({
+            x: Math.floor(Math.random() * GW),
+            y: Math.floor(Math.random() * GH * 0.75),
+            brightness: Math.random(),
+            speed: Math.random() * 0.02 + 0.005,
+            dir: Math.random() > 0.5 ? 1 : -1
+        });
+    }
+}
+
+function updateStars() {
+    stars.forEach(s => {
+        s.brightness += s.speed * s.dir;
+        if (s.brightness > 1 || s.brightness < 0.2) s.dir *= -1;
+    });
+}
+
+function drawStars() {
+    stars.forEach(s => {
+        const b = Math.floor(s.brightness * 200 + 55);
+        ctx.fillStyle = `rgb(${b},${b},${b})`;
+        ctx.fillRect(s.x, s.y, 1, 1);
+    });
+}
+
+// ============================================================
+// GROUND
+// ============================================================
+let groundNoise = null;
+
+function buildGround() {
+    const groundY = Math.floor(GH * 0.88);
+    groundNoise = { y: groundY };
+}
+
+function drawGround() {
+    if (!groundNoise) return;
+    const gy = groundNoise.y;
+
+    // Ground layers
+    for (let y = gy; y < GH; y++) {
+        const depth = (y - gy) / (GH - gy);
+        for (let x = 0; x < GW; x++) {
+            const noise = Math.sin(x * 0.3 + y * 0.7) * 0.5 + 0.5;
+            let color;
+            if (depth < 0.05) {
+                // Top: grass
+                color = noise > 0.6 ? PAL.gndGrass2 : PAL.gndGrass;
+            } else if (depth < 0.15) {
+                color = noise > 0.5 ? PAL.gndBase : PAL.gndDark;
+            } else {
+                color = noise > 0.4 ? PAL.gndBase : PAL.gndDark;
+            }
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, 1, 1);
+        }
+    }
+}
+
+// ============================================================
+// SEED
+// ============================================================
+let seed = null;
+
+class Seed {
+    constructor() {
+        this.x = Math.floor(GW / 2);
+        this.y = 2;
+        this.vy = 0;
+        this.planted = false;
+        this.openProgress = 0;
+        this.groundY = Math.floor(GH * 0.88) - 2;
+    }
+
+    update() {
+        if (!this.planted) {
+            this.vy += 0.08;
+            this.y += this.vy;
+            if (this.y >= this.groundY) {
+                this.y = this.groundY;
+                this.vy *= -0.3;
+                if (Math.abs(this.vy) < 0.15) {
+                    this.vy = 0;
+                    this.planted = true;
+                }
+            }
+        } else {
+            this.openProgress = Math.min(1, this.openProgress + 0.008);
+        }
+    }
+
+    draw() {
+        const x = Math.floor(this.x);
+        const y = Math.floor(this.y);
+
+        ctx.fillStyle = PAL.trkBase;
+        ctx.fillRect(x-1, y, 3, 2);
+        ctx.fillStyle = PAL.trkLight;
+        ctx.fillRect(x, y, 1, 2);
+
+        if (this.planted && this.openProgress > 0.3) {
+            // sprout emerging
+            const sh = Math.floor(this.openProgress * 6);
+            ctx.fillStyle = '#2E7D32';
+            for (let i = 0; i < sh; i++) {
+                ctx.fillRect(x, y - 1 - i, 1, 1);
+            }
+            if (sh > 3) {
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(x - 1, y - sh + 1, 1, 1);
+                ctx.fillRect(x + 1, y - sh + 1, 1, 1);
+            }
+        }
+    }
+}
+
+// ============================================================
+// PETALS
+// ============================================================
+let petals = [];
+
+const PETAL_COLORS = [PAL.petal1, PAL.petal2, PAL.petal3, PAL.petal4];
+
+function createPetal(fromTop = true) {
+    const { ox } = getSpriteOrigin();
+    return {
+        x: fromTop ? Math.random() * GW : ox + Math.random() * SPRITE_W,
+        y: fromTop ? -4 : Math.random() * (GH * 0.5),
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: Math.random() * 0.25 + 0.1,
+        angle: Math.random() * Math.PI * 2,
+        angV: (Math.random() - 0.5) * 0.03,
+        wave: Math.random() * Math.PI * 2,
+        waveSpeed: Math.random() * 0.02 + 0.01,
+        waveAmp: Math.random() * 0.3 + 0.1,
+        color: PETAL_COLORS[Math.floor(Math.random() * PETAL_COLORS.length)],
+        size: Math.random() > 0.5 ? 2 : 1
+    };
+}
+
+function updatePetals() {
+    petals.forEach(p => {
+        p.wave += p.waveSpeed;
+        p.x += p.vx + Math.sin(p.wave) * p.waveAmp;
+        p.y += p.vy;
+        p.angle += p.angV;
+        if (p.y > GH + 5) {
+            p.y = -4;
+            p.x = Math.random() * GW;
+        }
+    });
+}
+
+function drawPetals() {
+    petals.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x + 0.5, p.y + 0.5);
+        ctx.rotate(p.angle);
+        ctx.fillStyle = p.color;
+        if (p.size === 2) {
+            ctx.fillRect(-1, -1, 2, 1);
+            ctx.fillRect(0, 0, 1, 1);
+        } else {
+            ctx.fillRect(0, 0, 1, 1);
+        }
+        ctx.restore();
+    });
+}
+
+// ============================================================
+// SKY GRADIENT
+// ============================================================
+function drawSky() {
+    // Simple pixel-art sky with subtle gradient
+    for (let y = 0; y < Math.floor(GH * 0.88); y++) {
+        const t = y / (GH * 0.88);
+        // Interpolate between deep indigo and dark purple
+        const r = Math.floor(10 + t * 15);
+        const g = Math.floor(10 + t * 5);
+        const b = Math.floor(26 + t * 20);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(0, y, GW, 1);
+    }
+}
+
+// ============================================================
+// TEXT SYSTEM
+// ============================================================
+function showText(text, duration = 6000) {
+    mainText.textContent = text;
+    mainText.classList.add('visible');
+    if (duration > 0) {
+        setTimeout(() => mainText.classList.remove('visible'), duration);
+    }
+}
+
+// ============================================================
+// AUDIO
+// ============================================================
+let audioCtx = null;
+let musicOn = false;
+
+function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playNote(freq, startTime, duration, gain = 0.06, type = 'sine') {
+    if (!audioCtx || !musicOn) return;
+    const osc = audioCtx.createOscillator();
+    const env = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, startTime);
+    env.gain.setValueAtTime(0, startTime);
+    env.gain.linearRampToValueAtTime(gain, startTime + 0.02);
+    env.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc.connect(env);
+    env.connect(audioCtx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.05);
+}
+
+function scheduleMelody() {
+    if (!audioCtx || !musicOn) return;
+    const now = audioCtx.currentTime;
+    const bpm = 72;
+    const beat = 60 / bpm;
+
+    // Pentatonic scale in C — lofi feel
+    const melody = [
+        [261.63, 1], [293.66, 0.5], [329.63, 0.5],
+        [392.00, 1], [349.23, 0.5], [329.63, 0.5],
+        [293.66, 1.5], [261.63, 0.5],
+        [220.00, 2],
+        [261.63, 1], [329.63, 1],
+        [392.00, 1], [440.00, 0.5], [392.00, 0.5],
+        [349.23, 1.5], [329.63, 0.5],
+        [293.66, 2]
+    ];
+
+    const chords = [
+        [196.00, 246.94, 293.66], // G minor
+        [261.63, 329.63, 392.00], // C major
+        [220.00, 261.63, 329.63], // A minor
+        [246.94, 311.13, 369.99]  // B half-dim
+    ];
+
+    let t = now + 0.1;
+    melody.forEach(([freq, dur]) => {
+        playNote(freq, t, dur * beat * 0.9, 0.07, 'sine');
+        t += dur * beat;
+    });
+
+    // Soft chords underneath
+    let ct = now + 0.1;
+    for (let ci = 0; ci < 4; ci++) {
+        const chord = chords[ci % chords.length];
+        chord.forEach(freq => {
+            playNote(freq * 0.5, ct, beat * 4 * 0.95, 0.025, 'triangle');
+        });
+        ct += beat * 4;
+    }
+
+    // Kick pattern
+    function playKick(time) {
+        if (!audioCtx || !musicOn) return;
+        const osc = audioCtx.createOscillator();
+        const env = audioCtx.createGain();
+        osc.frequency.setValueAtTime(80, time);
+        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3);
+        env.gain.setValueAtTime(0.3, time);
+        env.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+        osc.connect(env);
+        env.connect(audioCtx.destination);
+        osc.start(time);
+        osc.stop(time + 0.35);
+    }
+
+    for (let k = 0; k < 8; k++) {
+        playKick(now + 0.1 + k * beat * 2);
+    }
+
+    // Loop
+    const totalDuration = melody.reduce((s, [, d]) => s + d * beat, 0);
+    setTimeout(() => {
+        if (musicOn) scheduleMelody();
+    }, totalDuration * 1000 - 200);
+}
+
+// ============================================================
+// ANIMATION TIMELINE
+// ============================================================
+const STATE = {
+    INITIAL: 0,
+    SEED_FALL: 1,
+    SEED_PLANTED: 2,
+    TREE_TRUNK: 3,
+    TREE_CANOPY_BUILD: 4,
+    TREE_COLOR: 5,
+    TREE_DONE: 6,
+    PETALS: 7
+};
+
+let state = STATE.INITIAL;
+let frame = 0;
+
+// treeReveal: how much structure is revealed (0-1)
+// colorReveal: how much color ramp is applied (0-1)
+
+function startAnimation() {
+    initAudio();
+    musicOn = true;
+    scheduleMelody();
+
+    startButton.classList.add('hidden');
+    state = STATE.SEED_FALL;
+    seed = new Seed();
+    buildGround();
+    showText('Todo empieza\ncon algo pequeño...', 5000);
+}
+
+function timeline() {
+    frame++;
+
+    switch (state) {
+        case STATE.SEED_FALL:
+            if (seed) seed.update();
+            if (seed && seed.planted && seed.openProgress >= 0.95) {
+                state = STATE.TREE_TRUNK;
+                treeVisible = true;
+                treeReveal = 0;
+                colorReveal = 0;
+                seed = null;
+                setTimeout(() => showText('El tiempo pasa...', 4000), 500);
+            }
+            break;
+
+        case STATE.TREE_TRUNK:
+            // Reveal trunk only (layer 0) = treeReveal goes to ~0.1
+            treeReveal = Math.min(0.16, treeReveal + 0.0008);
+            colorReveal = Math.min(0.15, colorReveal + 0.001);
+            if (treeReveal >= 0.16) {
+                state = STATE.TREE_CANOPY_BUILD;
+                setTimeout(() => showText('Que la vida te vea\nflorecer ✿', 5000), 800);
+            }
+            break;
+
+        case STATE.TREE_CANOPY_BUILD:
+            // Reveal canopy structure progressively
+            treeReveal = Math.min(1.0, treeReveal + 0.003);
+            colorReveal = Math.min(1.5, colorReveal + 0.001);
+            if (treeReveal >= 1.0) {
+                state = STATE.TREE_COLOR;
+            }
+            break;
+
+        case STATE.TREE_COLOR:
+            // Color ramp reveal
+            colorReveal = Math.min(6.0, colorReveal + 0.025);
+            if (colorReveal >= 6.0) {
+                state = STATE.TREE_DONE;
+                setTimeout(() => showText('Me alegra\nque existas ♡', 5000), 500);
+            }
+            break;
+
+        case STATE.TREE_DONE:
+            // Brief pause then petals
+            if (frame % 200 === 0) {
+                state = STATE.PETALS;
+                showText('Feliz cumpleaños\nJanny ✿', 0);
+                signature.classList.add('visible');
+
+                // Spawn petals gradually
+                for (let i = 0; i < 60; i++) {
+                    setTimeout(() => petals.push(createPetal(true)), i * 120);
+                }
+            }
+            break;
+
+        case STATE.PETALS:
+            // Keep petals falling, add occasional new ones
+            if (frame % 180 === 0 && petals.length < 80) {
+                petals.push(createPetal(false));
+            }
+            break;
+    }
+
+    updateStars();
+    updatePetals();
+    if (seed) seed.update();
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function render() {
+    // Clear
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, GW, GH);
+
+    drawSky();
+    drawStars();
+
+    if (state > STATE.INITIAL) {
+        drawGround();
+    }
+
+    if (seed) seed.draw();
+    drawTree();
+    drawPetals();
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+function loop() {
+    timeline();
+    render();
+    requestAnimationFrame(loop);
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+setupCanvas();
+createStars();
+buildGround();
+
+mainText.classList.add('visible');
+startButton.addEventListener('click', startAnimation);
+
+loop();
+</script>
+</body>
+</html>
