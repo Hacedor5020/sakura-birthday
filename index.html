@@ -148,6 +148,16 @@ const PAL = {
     gndGrass: '#1a2f0a',
     gndGrass2: '#243d0e',
     gndGrass3: '#8B4513',
+    
+    // New ground colors
+    gndGreen1: '#455A31',
+    gndGreen2: '#A2A12B',
+    gndGreen3: '#677230',
+    gndGreen4: '#7A7B2B',
+    gndGreen5: '#9A972C',
+    gndGreen6: '#837024',
+    gndGreen7: '#50501E',
+    gndGreen8: '#454215',
 
     // Trunk
     trkShadow: '#2B1B0D',
@@ -415,7 +425,7 @@ function drawStars() {
     stars.forEach(s => {
         const b = Math.floor(s.brightness * 200 + 55);
         ctx.fillStyle = `rgb(${b},${b},${b})`;
-        ctx.fillRect(s.x, s.y, 1, 1);
+        ctx.fillRect(s.x * PIXEL, s.y * PIXEL, PIXEL, PIXEL);
     });
 }
 
@@ -445,12 +455,20 @@ function drawGround() {
             
             let color;
             if (depth < 0.05) {
-                // Top: grass con variación por viento
-                color = windEffect > 0.6 ? PAL.gndGrass2 : PAL.gndGrass;
+                // Top: grass con nuevos colores verdes
+                const grassColors = [PAL.gndGreen1, PAL.gndGreen2, PAL.gndGreen3, PAL.gndGreen4, PAL.gndGreen5];
+                const grassIndex = Math.floor(windEffect * grassColors.length);
+                color = grassColors[Math.min(grassIndex, grassColors.length - 1)];
             } else if (depth < 0.15) {
-                color = windEffect > 0.5 ? PAL.gndBase : PAL.gndDark;
+                // Middle layer: mezcla de colores nuevos
+                const midColors = [PAL.gndGreen6, PAL.gndGreen7, PAL.gndGreen8, PAL.gndBase];
+                const midIndex = Math.floor(windEffect * midColors.length);
+                color = midColors[Math.min(midIndex, midColors.length - 1)];
             } else {
-                color = windEffect > 0.4 ? PAL.gndBase : PAL.gndDark;
+                // Deep layer: colores más oscuros
+                const deepColors = [PAL.gndDark, PAL.gndGreen8, PAL.gndGreen7];
+                const deepIndex = Math.floor(windEffect * deepColors.length);
+                color = deepColors[Math.min(deepIndex, deepColors.length - 1)];
             }
             ctx.fillStyle = color;
             ctx.fillRect(x * PIXEL, y * PIXEL, PIXEL, PIXEL);
@@ -495,21 +513,21 @@ class Seed {
         const y = Math.floor(this.y);
 
         ctx.fillStyle = PAL.trkBase;
-        ctx.fillRect(x-1, y, 3, 2);
+        ctx.fillRect((x-1) * PIXEL, y * PIXEL, PIXEL * 3, PIXEL * 2);
         ctx.fillStyle = PAL.trkLight;
-        ctx.fillRect(x, y, 1, 2);
+        ctx.fillRect(x * PIXEL, y * PIXEL, PIXEL, PIXEL * 2);
 
         if (this.planted && this.openProgress > 0.3) {
             // sprout emerging
             const sh = Math.floor(this.openProgress * 6);
             ctx.fillStyle = '#2E7D32';
             for (let i = 0; i < sh; i++) {
-                ctx.fillRect(x, y - 1 - i, 1, 1);
+                ctx.fillRect(x * PIXEL, (y - 1 - i) * PIXEL, PIXEL, PIXEL);
             }
             if (sh > 3) {
                 ctx.fillStyle = '#4CAF50';
-                ctx.fillRect(x - 1, y - sh + 1, 1, 1);
-                ctx.fillRect(x + 1, y - sh + 1, 1, 1);
+                ctx.fillRect((x - 1) * PIXEL, (y - sh + 1) * PIXEL, PIXEL, PIXEL);
+                ctx.fillRect((x + 1) * PIXEL, (y - sh + 1) * PIXEL, PIXEL, PIXEL);
             }
         }
     }
@@ -555,14 +573,14 @@ function updatePetals() {
 function drawPetals() {
     petals.forEach(p => {
         ctx.save();
-        ctx.translate(p.x + 0.5, p.y + 0.5);
+        ctx.translate(p.x * PIXEL + PIXEL/2, p.y * PIXEL + PIXEL/2);
         ctx.rotate(p.angle);
         ctx.fillStyle = p.color;
         if (p.size === 2) {
-            ctx.fillRect(-1, -1, 2, 1);
-            ctx.fillRect(0, 0, 1, 1);
+            ctx.fillRect(-PIXEL, -PIXEL, PIXEL * 2, PIXEL);
+            ctx.fillRect(0, 0, PIXEL, PIXEL);
         } else {
-            ctx.fillRect(0, 0, 1, 1);
+            ctx.fillRect(0, 0, PIXEL, PIXEL);
         }
         ctx.restore();
     });
